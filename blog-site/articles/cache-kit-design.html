@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>三级缓存组件设计：实体元数据驱动的 Caffeine → Redis → DB | BIGLV666</title>
+<meta name="description" content="Caffeine→Redis→DB read-through、binlog 直连失效、single-flight 防击穿——对 MyBatis-Plus 用户零注解接入。">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>">
+<style>
+.article-grid{display:grid;grid-template-columns:1fr 200px;gap:40px;max-width:1080px;margin:0 auto;padding:44px 24px 30px}
+.art{min-width:0}
+.toc{position:sticky;top:92px;align-self:start;font-size:13px;max-height:calc(100vh - 120px);overflow-y:auto}
+.toc .tt{color:var(--faint);letter-spacing:2px;font-size:11px;margin-bottom:10px}
+.toc a{display:block;color:var(--muted);padding:4px 0 4px 12px;border-left:2px solid var(--line)}
+.toc a:hover{color:var(--text);text-decoration:none}
+.toc a.on{color:var(--acc);border-left-color:var(--acc)}
+.art h2{font-size:21px;margin:36px 0 12px;color:var(--text);padding-left:12px;border-left:3px solid var(--acc)}
+.art h3{font-size:16.5px;margin:26px 0 8px}
+.art p{margin:9px 0;color:var(--text)}
+.art ul,.art ol{margin:9px 0;padding-left:1.7em}
+.art li{margin:4px 0;color:var(--text)}
+.art blockquote{border-left:3px solid var(--acc);background:var(--card);padding:10px 18px;margin:14px 0;border-radius:0 10px 10px 0;color:var(--muted)}
+.art code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 7px;font-size:13px;font-family:Consolas,monospace}
+.art pre{background:#0d1526;border:1px solid var(--line);border-radius:11px;padding:15px 18px;overflow-x:auto;margin:15px 0;line-height:1.7}
+html[data-theme="light"] .art pre{background:#0f172a}
+.art pre code{background:none;border:none;padding:0;font-size:12.8px;color:#c9d4e8}
+.art table{border-collapse:collapse;width:100%;margin:15px 0;font-size:13.3px}
+.art th,.art td{border:1px solid var(--line);padding:7px 12px;text-align:left}
+.art th{background:var(--card)}
+.art img{max-width:100%}
+.art hr{border:none;border-top:1px solid var(--line);margin:26px 0}
+.codehilite{background:#0d1526;border-radius:11px}
+.codehilite .hll{background:#2a3550}
+.backline{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+.backline a{color:var(--muted);font-size:13.5px}
+.backline a:hover{color:var(--acc)}
+.meta-line{color:var(--faint);font-size:12.5px;margin-left:auto}
+.art h1{font-size:28px;line-height:1.4;margin-bottom:10px}
+@media(max-width:900px){.article-grid{grid-template-columns:1fr}.toc{display:none}}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="progress"></div>
+<header>
+  <nav class="wrap">
+    <a class="logo" href="/">BIGLV<span>666</span></a>
+    <span class="sp"></span>
+    <a class="lk" href="/#components">开源组件</a>
+    <a class="lk" href="/#projects">项目</a>
+    <a class="lk" href="/#blog">博客</a>
+    <a class="lk" href="https://github.com/BIGLV666" target="_blank" rel="noopener">GitHub</a>
+    <button id="themeBtn" title="切换主题" aria-label="切换主题">🌙</button>
+    <button id="palBtn" title="搜索 (Ctrl+K)">⌘K</button>
+  </nav>
+</header>
+
+<div class="article-grid">
+  <article class="art">
+    <div class="backline"><a href="/#blog">← 返回首页</a><span class="meta-line">BIGLV666 · 2026</span></div>
+    <h1>三级缓存组件设计：实体元数据驱动的 Caffeine → Redis → DB</h1>
+    <p style="color:var(--muted);font-size:14px;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:24px">Caffeine→Redis→DB read-through、binlog 直连失效、single-flight 防击穿——对 MyBatis-Plus 用户零注解接入。</p>
+    
+<p>实体元数据驱动的三级缓存组件：<strong>Caffeine（L1）→ Redis（L2）→ DB（loader）</strong> read-through。
+对 MyBatis-Plus 用户<strong>零注解接入</strong>；binlog 直连失效补齐"绕过应用的写"盲区；
+一致性语义为<strong>最终一致</strong>——常态秒级（双删窗口内），最坏受 L2 TTL 上界约束（见"一致性机制"）。</p>
+<h2>特性</h2>
+<ul>
+<li>三级 read-through：L1 → L2 → 方法体（查 DB），命中逐级回填</li>
+<li>实体元数据自动推导缓存键（<code>表名:主键</code>），无需手写 SpEL 键表达式</li>
+<li>MyBatis-Plus 注解复用：<code>@TableName</code> / <code>@TableId</code> 即元数据，<code>selectById</code> / <code>selectBatchIds</code> / <code>updateById</code> / <code>deleteById</code> 零注解自动接入</li>
+<li>主键批量查询 per-ID 拆解：命中部分直接用，缺失集合才回源；"已确认不存在"用 null 占位（IN 语义）</li>
+<li>并发防护四件套：single-flight 防击穿、TTL 随机抖动防雪崩、null 短 TTL 防穿透、L1 短 TTL 兜底 pub/sub 丢消息</li>
+<li>多实例一致性：写后删缓存 + Redis pub/sub 失效广播 + 延迟双删</li>
+<li><strong>binlog 直连失效（0.2.0+）</strong>：直连 MySQL binlog，DBA 改库、其他服务写入也能秒级失效，无需部署 Canal</li>
+<li><strong>IService 批量写失效（0.3.0+）</strong>：saveBatch / updateBatchById / saveOrUpdateBatch 自动失效（SqlSession 批量通道绕过 mapper 代理，独立切面覆盖）</li>
+<li>强一致读出口：<code>CacheKit.withDb(...)</code> 作用域旁路</li>
+</ul>
+<h2>快速开始</h2>
+<h3>引入依赖</h3>
+<pre class="codehilite"><code class="language-xml">&lt;dependency&gt;
+    &lt;groupId&gt;io.github.biglv666&lt;/groupId&gt;
+    &lt;artifactId&gt;cache-kit-spring-boot-starter&lt;/artifactId&gt;
+    &lt;version&gt;0.3.0&lt;/version&gt;
+&lt;/dependency&gt;
+</code></pre>
+
+<p>要求 JDK 17+、Spring Boot 3.5.x。L2（Redis）与 MyBatis-Plus 适配按类路径自动启用。</p>
+<h3>MyBatis-Plus 项目（零注解）</h3>
+<pre class="codehilite"><code class="language-java">@TableName(&quot;t_user&quot;)
+public class User {
+    @TableId
+    private Long userId;
+    private String userName;
+}
+
+userMapper.selectById(1L);    // 自动走三级缓存
+userMapper.selectBatchIds(List.of(1L, 2L, 3L));  // per-ID 拆解：命中直接用，缺失才回源
+userMapper.updateById(user);  // 自动失效 + 广播 + 延迟双删
+</code></pre>
+
+<p>批量语义：缓存键与单条查询完全相同（<code>表名:主键</code>），逐 ID 三态（命中值 / 已缓存空 / 未命中）；
+"已确认不存在"缓存 null 占位（短 TTL），IN 查询里自动消失；结果按请求顺序输出、跳过不存在的 ID。</p>
+<p>写覆盖范围（自动失效，无需注解）：
+- <code>updateById</code> / <code>deleteById</code> / <code>deleteByIds</code> / <code>insert</code>：经 mapper 代理，切面直接拦截
+- <strong><code>IService.saveBatch</code> / <code>updateBatchById</code> / <code>saveOrUpdateBatch</code>（0.3.0+）</strong>：这些方法在 MP 内部经
+  SqlSession 批量语句执行、<strong>绕过 mapper 代理</strong>，由独立的 service 切面覆盖（切面会给 IService 实现加 AOP 代理，Boot 默认 CGLIB）
+- <strong>条件写（<code>update(Wrapper)</code> / <code>delete(Wrapper)</code> 等不带主键值的写）无法精确失效</strong>——开启 binlog 可覆盖，否则靠 TTL 兜底</p>
+<h3>非 MP 项目（实体注解）</h3>
+<pre class="codehilite"><code class="language-java">@CacheEntity(ttl = 3600)
+public class User {
+    @CacheId
+    private Long userId;
+    private String userName;
+}
+
+@Mapper
+public interface UserMapper {
+    @CachedQuery
+    User selectByUserId(@Param(&quot;userId&quot;) Long userId);
+
+    @CacheInvalidate(entity = User.class)
+    int updateStatus(@Param(&quot;userId&quot;) Long userId, @Param(&quot;status&quot;) int status);
+}
+</code></pre>
+
+<p>主键推导（严格模式）：① 参数中有实体实例（<code>updateById(User)</code>）→ ② 标量参数且参数名与主键字段同名
+（匹配 MyBatis <code>@Param</code> 值或 Java 参数名，需 <code>-parameters</code> 编译，Boot 父 POM 默认开启）。
+两条路都走不通（如条件字段查询 <code>selectByPhone(String phone)</code>）会打警告并<strong>直查 DB</strong>——
+猜测式推导会把条件值当主键回填 <code>表:&lt;条件值&gt;</code>，造成键空间混淆且行更新时失效链路断裂，因此被代码强制拒绝。</p>
+<h3>注入句柄（手动控制）</h3>
+<pre class="codehilite"><code class="language-java">@CacheHandle(User.class)
+private EntityCache&lt;User&gt; userCache;
+
+User u = userCache.get(id, () -&gt; mapper.selectByUserId(id));
+userCache.evict(id);
+</code></pre>
+
+<h2>binlog 直连失效（0.2.0+，覆盖"绕过应用的写"）</h2>
+<p>广播失效的前提是写走应用路径。DBA 改库、其他服务写同一张表时，cache-kit 无法感知——
+binlog 直连失效模块补上这个盲区：以 MySQL replica 协议直连 binlog（ROW 格式），
+任何来源对已缓存实体表的写入都会按行提取主键并触发失效。</p>
+<p><strong>不需要部署 Canal Server</strong>：类路径引入 <code>mysql-binlog-connector-java</code>（本 starter 中声明为 optional，
+仅启用 binlog 的服务需要自行添加该依赖）+ 开启开关即可。MySQL 需开启 <code>log_bin</code>、
+<code>binlog_format=ROW</code>、<code>binlog_row_image=FULL</code>（MINIMAL 会让行镜像缺主键列，按行失效静默丢失），
+且账号具备 <code>REPLICATION SLAVE</code> 权限。</p>
+<pre class="codehilite"><code class="language-yaml">cache-kit:
+  binlog:
+    enabled: true        # 缺省关闭
+    # host/port/database 缺省从 spring.datasource.url 解析，账号缺省用数据源账号
+    # server-id 缺省自动生成随机值；同一 MySQL 上多副本部署建议显式配置
+    server-id: 18365     # 同一 MySQL 上必须唯一（与 MySQL server-id 及其他副本不同）
+</code></pre>
+
+<p>注意：MySQL 8.4 移除了 <code>SHOW MASTER STATUS</code>，需 connector 0.30.0+（本 starter 默认 0.31.0）。</p>
+<p>实测：直写 → 失效 → 下次读到新值，端到端传播延迟 <strong>avg 10.3ms / p99 14.2ms / max 53.7ms</strong>（300 次直写零漏失效，含 5ms 轮询测量粒度）。</p>
+<h2>强一致读（豁免）</h2>
+<p>缓存是最终一致的。需要强一致的场景按档位选用：</p>
+<table>
+<thead>
+<tr>
+<th>档位</th>
+<th>用法</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自定义方法不加注解</td>
+<td><code>selectByIdFromDb(Long id)</code></td>
+<td>已知某方法永远要 DB</td>
+</tr>
+<tr>
+<td>ThreadLocal 旁路</td>
+<td><code>CacheKit.withDb(() -&gt; mapper.selectById(id))</code></td>
+<td>调用点临时决定</td>
+</tr>
+<tr>
+<td>SpEL 条件</td>
+<td><code>@CachedQuery(condition = "!forceDb")</code></td>
+<td>由调用方传参决定</td>
+</tr>
+</tbody>
+</table>
+<p><strong>库存扣减、余额等强一致判断所依赖的字段不要进缓存</strong>——任何缓存方案（双删、binlog 均不例外）都是最终一致。</p>
+<h2>配置全参考（前缀 <code>cache-kit.*</code>）</h2>
+<pre class="codehilite"><code class="language-yaml">cache-kit:
+  enabled: true            # 总开关
+  key-namespace:           # 键命名空间：未配置时自动取 spring.application.name（多服务共享 Redis 必要隔离）
+  require-key-namespace: false  # true 时 key-namespace 与 spring.application.name 均为空 → 启动失败（键冲突零容忍场景）
+  l1:                      # 本地缓存（Caffeine，当前版本不支持替换实现）
+    max-entries: 65536     # 最大条目数（条目数上限，不限制单条大小）
+    max-weight-kb: 0       # 权重上限（K 字符）：&gt;0 时取代 max-entries，防大实体撑爆堆内存。
+                           # 实际内存上限 ≈ max-weight-kb × 2KB（BMP 字符 UTF-16 双字节，中文场景）；
+                           # 建议生产环境启用，例如 65536 ≈ 128MB 上限。单条 JSON 按长度/1024 计权重，最小 1
+    ttl: 30s               # L1 TTL：必须显著小于 l2.ttl，是 pub/sub 丢消息时的脏读上界
+  l2:                      # 远程缓存（Redis，类路径有 spring-data-redis 且存在 RedisConnectionFactory 时启用；
+                           # 只有类没有工厂 Bean 时自动降级为 L1-only，不影响启动）
+    ttl: 10m               # L2 TTL 基准；非正值（0/负数）= 跳过 L2 写入（等效禁用 Redis 缓存，启动打警告），
+                           # 不是&quot;永不过期&quot;——组件的脏数据安全模型依赖 TTL 上界
+    jitter: 60s            # TTL 随机抖动上限（防雪崩），0 关闭；基准 TTL 非正时不叠加抖动
+    null-ttl: 30s          # null 占位的短 TTL（防穿透）；非正值 = 不缓存 null 占位（关闭穿透防护）
+    double-delete-delay: 1s  # 延迟双删间隔；写极热键时可调小或评估回源放大
+  broadcast:               # 失效广播（多实例部署必须开启）
+    enabled: true
+    topic: cache-kit:invalidate
+  mp:                      # MyBatis-Plus 适配
+    auto-cache-base-methods: true  # 自动接入总开关：BaseMapper 六方法 + IService 批量写
+                                   # （saveBatch/updateBatchById/saveOrUpdateBatch）；条件写不在范围
+  tx:                     # 事务感知失效（spring-tx 在类路径时生效）
+    evict-after-commit: true       # 写方法处于活动事务时，失效延迟到 afterCommit；回滚不失效。
+                                   # 关闭后若事务耗时超过 double-delete-delay，脏值存活至 L2 TTL（长事务勿关）
+  binlog:                  # binlog 直连失效（0.2.0+，缺省关闭）
+    enabled: false
+    host:                  # 缺省从 spring.datasource.url 解析
+    port:
+    database:
+    username:              # 缺省用数据源账号
+    password:
+    server-id:             # 缺省自动生成随机值；同一 MySQL 上必须唯一
+</code></pre>
+
+<h2>一致性机制与性能实测</h2>
+<p>写路径固定<strong>先写 DB 后删缓存</strong>（Cache-Aside 标准序）。删除动作 = <strong>DEL L2 → 本地 L1 → pub/sub 广播 → 延迟双删</strong>。
+顺序关键：必须先删 L2——若先删 L1，间隙内并发读会 L1 miss 后从 L2 读到旧值并回填 L1，制造可复现脏数据。</p>
+<p>脏数据的核心窗口是<strong>回填竞态</strong>（读线程查到旧值、写线程删除后、读线程把旧值回填进 L1/L2）。
+延迟双删压缩该窗口；窗口之外（慢读/长 GC 跨过双删间隔、双删积压丢弃、Redis 宕机期间失效丢失）
+旧值可能复活在 L2 并持续回填各节点 L1，此类场景的真实上界是 <strong>L2 TTL（默认 10m + 抖动）</strong>，
+而非秒级——这是 Cache-Aside 的固有竞态，本组件未用版本号/CAS 消除它，依赖 TTL 上界兜底。
+对一致性敏感的字段请用 <code>CacheKit.withDb</code> 旁路或直接不进缓存。</p>
+<p>以下为 PaperWise 宿主项目上的实测数据（单机 4~10 实例 + Docker Redis/MySQL，Java 17）：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓存命中读</td>
+<td>微秒级；20,249 个 HTTP 请求期间 MySQL InnoDB 行读取零增长</td>
+</tr>
+<tr>
+<td>应用内写失效</td>
+<td>每写增加约 1~2ms（DEL L2 + 广播 + 双删调度）；4.6 万次广播零丢失</td>
+</tr>
+<tr>
+<td>广播最终一致性</td>
+<td>10 实例、716 写/s 并发、4.6 万次广播：全实例最终版本校验 100% 通过</td>
+</tr>
+<tr>
+<td>脏读窗口（应用内写）</td>
+<td>最大 119ms~505ms（含单 JVM 调度噪声），远小于 L1 TTL 30s 设计上界</td>
+</tr>
+<tr>
+<td>脏读窗口（binlog 直写）</td>
+<td>p99 14.2ms，300 次直写零漏失效</td>
+</tr>
+<tr>
+<td>外部 HTTP 全链路</td>
+<td>单实例饱和 ~1700 req/s；延迟基线由鉴权 Redis 往返主导，缓存命中本身微秒级</td>
+</tr>
+<tr>
+<td>回源放大</td>
+<td>热键上每次写约 3 次 DB 回源（广播删 + 双删删 + 在途回读），写极热键需评估</td>
+</tr>
+<tr>
+<td>跨实例击穿放大（0.3.0 量化）</td>
+<td>single-flight 仅单 JVM 生效：N 实例同时击穿同一未热键 = N 次 DB 回源（每实例 1 次）；</td>
+</tr>
+<tr>
+<td>冷启动场景 N×键数 即回源峰值，DB 按 <code>N × 每秒新增键数</code> 估算容量；若需全局互斥可外挂分布式锁，组件刻意未内置（锁的开销与死锁面 &gt; 冷启动回源放大）</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>适用边界</h2>
+<ul>
+<li>仅支持<strong>按主键定位</strong>的查询（单条 + 主键批量 <code>selectBatchIds</code> / <code>@CachedQuery</code> 返回 <code>List&lt;实体&gt;</code> 且参数为 ID 集合）；
+  条件查询（按手机号、状态等）<strong>永久不缓存</strong>——匹配集合未知且不可失效，恒回 DB</li>
+<li>不做 write-through / write-behind：写库由业务代码完成，本组件只负责失效</li>
+<li>不接管持久层：与 MyBatis/MP 的关系仅是元数据 + AOP</li>
+<li>复合主键不支持</li>
+<li>写方法处于活动事务时，失效延迟到 <strong>afterCommit</strong> 执行（<code>cache-kit.tx.evict-after-commit</code>，默认开），事务回滚不失效。
+  注意语义：同事务内先写后读同键会读到缓存里的<strong>提交前旧值</strong>（失效被延迟了），需要同事务立即可见时用 <code>CacheKit.withDb</code> 旁路读取</li>
+<li>binlog 模式下主键列序号来自 <code>information_schema</code>，<strong>按表缓存于进程生命周期内</strong>——改表结构需重启进程后重新解析</li>
+<li>binlog 与 <code>CacheKeyCustomizer</code> 组合存在已知限制：binlog 解析线程无法还原租户键段，租户键的 binlog 失效不会命中（仅 TTL/双删兜底），多租户场景建议暂不启用 binlog</li>
+</ul>
+
+<ul>
+<li><strong>binlog 与事务时序</strong>：MySQL 的 binlog 事件在 <strong>COMMIT 时</strong>才写入（事务内只进 binlog cache），监听端天然只见提交后数据，不存在"提交前触发失效"的竞态；残余的读回填竞态由双删 + TTL 兜底</li>
+<li><strong>null 占位与 INSERT</strong>：应用内 <code>mapper.insert()</code> 自动清除对应"已确认不存在"占位（新数据立即可见）；binlog 模式下 INSERT 行事件同样覆盖；两者皆无时，占位由 <code>null-ttl</code>（默认 30s）兜底</li>
+<li><strong>批量缺失回源</strong>：per-ID single-flight 保证每个缺失 ID 至多回源一次；无法保证多个<strong>不同</strong>批量请求合并为一条更大的 IN</li>
+<li><strong>主键类型/表名迁移</strong>：旧键成为孤儿由 TTL/L1 上限自然淘汰；如需立即切换，修改 <code>cache-kit.key-namespace</code> 整体弃用旧键</li>
+<li><strong>L1 不可替换</strong>：本地缓存固定为 CaffeineChannel；L2 通道支持定义自定义 <code>RedisChannel</code> Bean 覆盖</li>
+<li><strong>单飞等待者共享数据</strong>：single-flight 合并回源时，等待方各自拿到独立解码实例（不共享可变对象）；唯"实体不可序列化"的罕见兜底路径会共享实例</li>
+<li><strong>同前缀实体 fail-fast（0.3.0+）</strong>：两个实体解析出相同缓存前缀（如两个类都标 <code>@TableName("user")</code>）会在第二次接入时抛异常——同前缀共享键空间会互相覆盖缓存值，字段子集会静默缺字段</li>
+<li><strong><code>@CacheInvalidate</code> 严格语义</strong>：实体实例参数与实体集合参数（0.3.0+）可直接解析主键；标量参数需参数名与主键字段同名；<strong>标量集合（<code>List&lt;Long&gt;</code> 等）不收</strong>——无法证明元素是主键，防条件值误当主键（MP 的 deleteByIds 路径由自动切面覆盖，无需注解）</li>
+<li><strong><code>@CachedQuery</code> 列表查询空结果</strong>：严格守卫下回源结果为空（请求值全部查不到）按误用旁路处理、不缓存——无法证明请求值是主键集合；存在的行照常缓存</li>
+</ul>
+<h2>可观测性（Micrometer，自动装配）</h2>
+<p>宿主类路径有 micrometer-core（spring-boot-starter-actuator 自带）时自动注册 <code>cache-kit.*</code> 计数器，
+无需任何配置；也可自行实现 <code>CacheMetricsListener</code> Bean 接管。</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cache-kit.l1.requests{result=hit\|miss}</code></td>
+<td>L1 命中率</td>
+</tr>
+<tr>
+<td><code>cache-kit.l2.requests{result=hit\|miss}</code></td>
+<td>L2 命中率</td>
+</tr>
+<tr>
+<td><code>cache-kit.db.loads</code></td>
+<td>DB 回源（批量按 ID 数计）</td>
+</tr>
+<tr>
+<td><code>cache-kit.null.placeholders</code></td>
+<td>null 占位写入（穿透防护触发）</td>
+</tr>
+<tr>
+<td><code>cache-kit.evict.keys</code></td>
+<td>失效键数（含双删第二次）</td>
+</tr>
+<tr>
+<td><code>cache-kit.broadcast.sent</code> / <code>received{applied=true\|false}</code></td>
+<td>广播收发——<strong>sent 持续大于 received 说明存在广播丢失</strong>（L1 TTL 兜底）</td>
+</tr>
+</tbody>
+</table>
+<h2>稳健性设计</h2>
+<ul>
+<li><strong>L2 故障降级</strong>：Redis 宕机时按未命中处理（限频告警），业务读写绝不因 L2 失败而失败，由 L1/DB 兜底</li>
+<li><strong>L2 删除失败重试（0.3.0+）</strong>：DEL 恰好落在 Redis 闪断窗口内时旧值会滞留 L2——失效路径按双删延迟自动重试（上限 3 次），进一步压缩"失效丢失"窗口</li>
+<li><strong>序列化失败不丢数据</strong>：实体含 Jackson 无法序列化的结构（自引用等）时，本次结果照常返回、只是不缓存；缓存值反序列化失败（实体结构漂移）按未命中处理，回源成功自动覆盖坏值，不触发失效风暴</li>
+<li><strong>双删积压保护</strong>：延迟双删任务积压超过 10000 条时跳过新任务并限频告警（脏数据由 TTL 上界兜底）</li>
+<li><strong>广播来源校验</strong>：订阅器只清除键前缀能匹配已知实体的广播，防任意客户端清空缓存</li>
+<li><strong>Jackson 无多态反序列化</strong>：未启用 default typing，不存在反序列化 gadget 面</li>
+</ul>
+<h2>FAQ</h2>
+<p><strong>Mapper XML 打包后报 <code>Invalid bound statement</code>？</strong>
+这是 MyBatis-Plus 路径大小写问题，与本组件无关但高频踩坑：XML 放在 <code>resources/Mapper/</code>（大写）时，<code>classpath*:/mapper/*.xml</code> 在 IDE 目录模式能碰巧匹配（NTFS 大小写不敏感），打 jar 后必失败。显式配置 <code>mybatis-plus.mapper-locations: classpath*:/Mapper/*.xml</code>。</p>
+<p><strong>binlog 连接失败？</strong>
+依次检查：MySQL 是否开启 <code>log_bin</code> 且 <code>binlog_format=ROW</code>；<code>binlog_row_image</code> 是否为 <code>FULL</code>（MINIMAL 时行镜像缺主键列，按行失效会静默丢失）；账号是否有 <code>REPLICATION SLAVE</code> 权限；<code>server-id</code> 是否与 MySQL 及其他副本冲突；MySQL 8.4 需要 connector 0.30.0+。</p>
+<p><strong>多 Redis 实例部署时广播失效？</strong>
+广播 topic 活在单个 Redis 上，所有实例必须订阅同一个 Redis。用 Redis Cluster 分片扛 L2 流量时，失效 topic 需收敛在专用节点或使用 Redis 7 sharded pub/sub。</p>
+<p><strong>宿主没有 AOP 自动代理（切面不生效）？</strong>
+正常 Spring Boot 应用默认启用。若用 <code>ApplicationContextRunner</code> 手动装配测试，记得加 <code>AopAutoConfiguration</code>。</p>
+
+  </article>
+  <aside class="toc" id="toc"><div class="tt">目录 · TOC</div></aside>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/BIGLV666" target="_blank" rel="noopener">GitHub @BIGLV666</a>
+      <a href="mailto:379299583@qq.com">379299583@qq.com</a>
+      <a href="/">回到首页 ↑</a>
+    </div>
+    <div>© 2026 吕浩宇 (Haoyu Lv) · 河北师范大学 2029 届 · Java 后端与分布式基础组件</div>
+  </div>
+</footer>
+
+<div id="pal" hidden>
+  <div id="palMask"></div>
+  <div id="palBox">
+    <input id="palInput" type="text" placeholder="搜索组件 / 项目 / 文章…  (Esc 关闭)" autocomplete="off">
+    <ul id="palList"></ul>
+  </div>
+</div>
+<script src="/main.js"></script>
+<script>
+(function(){
+  var hs=[].slice.call(document.querySelectorAll(".art h2"));
+  var toc=document.getElementById("toc");
+  hs.forEach(function(h,i){
+    h.id="h-"+i;
+    var a=document.createElement("a");a.href="#h-"+i;a.textContent=h.textContent;
+    a.style.paddingLeft=(12+(parseInt(h.dataset.lvl||1)-1)*14)+"px";toc.appendChild(a);
+  });
+  var links=[].slice.call(toc.querySelectorAll("a"));
+  addEventListener("scroll",function(){
+    var cur=0;
+    hs.forEach(function(h,i){if(h.getBoundingClientRect().top<120)cur=i;});
+    links.forEach(function(a,i){a.classList.toggle("on",i===cur)});
+  },{passive:true});
+  document.documentElement.dataset.theme=localStorage.getItem("theme")||"light";
+  var b=document.getElementById("themeBtn");
+  if(b)b.textContent=document.documentElement.dataset.theme==="light"?"☀️":"🌙";
+})();
+</script>
+</body>
+</html>

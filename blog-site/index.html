@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>吕浩宇 · BIGLV666 | Java 后端与分布式基础组件</title>
+<meta name="description" content="吕浩宇 · 河北师范大学 2029 届 · Java 后端与分布式基础组件。已在 Maven Central 发布 7 个 Spring Boot Starter，著有 OutboxPro、CodeWise 等开源项目。">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>">
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="progress"></div>
+
+<header>
+  <nav class="wrap">
+    <a class="logo" href="#top">BIGLV<span>666</span></a>
+    <span class="sp"></span>
+    <a class="lk" href="#components">开源组件</a>
+    <a class="lk" href="#projects">项目</a>
+    <a class="lk" href="#blog">博客</a>
+    <button id="themeBtn" title="切换主题" aria-label="切换主题">🌙</button>
+    <button id="palBtn" title="搜索 (Ctrl+K)">⌘K</button>
+  </nav>
+</header>
+
+<main id="top">
+<!-- ============ HERO ============ -->
+<section class="hero wrap">
+  <div class="hi reveal"><span class="dot"></span>Java 后端 · 分布式基础组件</div>
+  <h1 class="reveal"><span class="grad">吕浩宇</span>
+    <span class="en">Haoyu Lv · @BIGLV666</span></h1>
+  <p class="sub reveal">河北师范大学 2029 届本科生，主攻 <b>Java 后端与分布式基础组件</b>方向。
+    专注于把业务中反复出现的能力沉淀为可复用组件，已在 Maven Central 发布 <b>7 个 Spring Boot Starter</b>，
+    覆盖认证会话、API 治理、并发防护、事务消息、状态机、Web 规范与多级缓存。</p>
+  <div class="cta reveal">
+    <a class="btn primary" href="https://github.com/BIGLV666" target="_blank" rel="noopener">
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub @BIGLV666</a>
+    <a class="btn ghost" href="mailto:379299583@qq.com">联系我</a>
+    <button class="btn ghost" id="palBtn2">⌘K 快速导航</button>
+  </div>
+  <div class="tags reveal" id="stackTags"></div>
+
+  <div class="term reveal" id="term">
+    <div class="term-bar"><span class="tb r"></span><span class="tb y"></span><span class="tb g"></span>
+      <span class="term-title">biglv@dev ~ mvn</span><button id="copyMvn" title="复制命令">复制</button></div>
+    <pre id="termBody"></pre>
+  </div>
+</section>
+
+<!-- ============ STATS ============ -->
+<section class="stats wrap reveal" id="stats">
+  <div class="stat"><div class="num" data-n="7">0</div><div class="lab">Maven Central 已发布 Starter</div></div>
+  <div class="stat"><div class="num" data-n="9">0</div><div class="lab">全家桶组件（含 BOM）</div></div>
+  <div class="stat"><div class="num" data-n="11">0</div><div class="lab">常用技术栈</div></div>
+  <div class="stat"><div class="num" data-n="3">0</div><div class="lab">主要开源项目</div></div>
+</section>
+
+<!-- ============ COMPONENTS ============ -->
+<section class="wrap" id="components">
+  <div class="sec-head reveal">
+    <div class="kicker">OPENSOURCE</div>
+    <h2>📦 Maven Central 开源组件</h2>
+    <p class="secsub">groupId: <code>io.github.biglv666</code> · 统一发布流水线（GPG 签名 + GitHub Actions 自动发布）· 一个 BOM 管全部版本</p>
+    <div class="tabs" id="compTabs">
+      <button class="on" data-f="all">全部 9</button>
+      <button data-f="st">Starter 8</button>
+      <button data-f="bom">BOM 1</button>
+    </div>
+  </div>
+  <div class="cards" id="compCards">
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/auth-kit-spring-boot-starter" target="_blank" rel="noopener">
+      <div class="card-top"><h3>auth-kit</h3><span class="badge ok">Maven Central</span></div>
+      <p>不透明 token + 有状态会话：踢人下线、同端互斥、滑动续期、登录防爆破。</p>
+      <div class="card-foot"><span>Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/api-governance-spring-boot-starter" target="_blank" rel="noopener">
+      <div class="card-top"><h3>api-governance</h3><span class="badge ok">Maven Central</span></div>
+      <p>API 治理：插件化限流、访问日志、指标统计、告警，注解即接入。</p>
+      <div class="card-foot"><span>Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/concurrent-guard" target="_blank" rel="noopener">
+      <div class="card-top"><h3>guard</h3><span class="badge ok">Maven Central</span></div>
+      <p>注解式幂等（防重复提交）与分布式锁，并发防护开箱即用。</p>
+      <div class="card-foot"><span>Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/OutboxPro" target="_blank" rel="noopener">
+      <div class="card-top"><h3>OutboxPro</h3><span class="badge ok">Maven Central</span></div>
+      <p>本地消息表事务消息：Relay 投递、发布确认、死信队列（DLQ），消息最终一致。</p>
+      <div class="card-foot"><span>事务消息</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/state-kit-spring-boot-starter" target="_blank" rel="noopener">
+      <div class="card-top"><h3>state-kit</h3><span class="badge ok">Maven Central</span></div>
+      <p>声明式状态机：数据库 CAS 条件更新保证并发正确性。</p>
+      <div class="card-foot"><span>Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/web-common-spring-boot-starter" target="_blank" rel="noopener">
+      <div class="card-top"><h3>web-common</h3><span class="badge ok">Maven Central</span></div>
+      <p>统一返回体、全局异常处理、响应自动包装，Web 层规范一套搞定。</p>
+      <div class="card-foot"><span>Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/data-scope-spring-boot-starter" target="_blank" rel="noopener">
+      <div class="card-top"><h3>data-scope</h3><span class="badge">GitHub 开源</span></div>
+      <p>轻量级行级数据权限：@DataScope 注解 + SQL 自动改写，范围决策归业务（ScopeResolver SPI），MyBatis / MyBatis-Plus 通用。</p>
+      <div class="card-foot"><span>Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="bom" href="https://github.com/BIGLV666/biglv666-spring-boot-bom" target="_blank" rel="noopener">
+      <div class="card-top"><h3>biglv666-spring-boot-bom</h3><span class="badge ok">BOM</span></div>
+      <p>全家桶版本聚合：一个 BOM 管住全部 starter 的依赖版本。</p>
+      <div class="card-foot"><span>依赖管理</span><span class="go">GitHub ↗</span></div>
+    </a>
+
+    <a class="card glow reveal" data-cat="st" href="https://github.com/BIGLV666/cache-kit-spring-boot-starter" target="_blank" rel="noopener">
+      <div class="card-top"><h3>cache-kit</h3><span class="badge ok">Maven Central</span></div>
+      <p>三级缓存 Caffeine → Redis → DB：read-through + binlog 失效，实体元数据自动推导缓存键，MyBatis-Plus 接入零成本。</p>
+      <div class="card-foot"><span>v0.3.0 · Spring Boot Starter</span><span class="go">GitHub ↗</span></div>
+    </a>
+  </div>
+</section>
+
+<!-- ============ PROJECTS ============ -->
+<section class="wrap" id="projects">
+  <div class="sec-head reveal">
+    <div class="kicker">PROJECTS</div>
+    <h2>🔭 主要项目</h2>
+    <p class="secsub">把组件用起来的真实业务 / 工具项目</p>
+  </div>
+  <div class="cards three">
+    <a class="card glow big reveal" href="https://github.com/BIGLV666/CodeWise" target="_blank" rel="noopener">
+      <div class="card-top"><h3>CodeWise</h3><span class="badge">微服务</span></div>
+      <p>微服务在线判题与 AI 学习平台：RabbitMQ 异步判题、Docker 多语言预热容器池、AI 测试产物确定性验收、SM-2 复习闭环。</p>
+      <div class="card-foot"><span>Spring Cloud · RabbitMQ · Docker · AI</span><span class="go">GitHub ↗</span></div>
+    </a>
+    <a class="card glow big reveal" href="https://github.com/BIGLV666/DevPilot" target="_blank" rel="noopener">
+      <div class="card-top"><h3>DevPilot</h3><span class="badge">开发工具</span></div>
+      <p>本地多服务开发控制台：多语言环境分析、进程树管理、SSE 实时日志。</p>
+      <div class="card-foot"><span>Go · Vue 3 · SSE</span><span class="go">GitHub ↗</span></div>
+    </a>
+    <a class="card glow big reveal" href="https://github.com/BIGLV666/api-scanner" target="_blank" rel="noopener">
+      <div class="card-top"><h3>api-scanner</h3><span class="badge">配套组件</span></div>
+      <p>Spring Boot 运行时接口与 DTO 字段树导出（DevPilot 配套组件）。</p>
+      <div class="card-foot"><span>Spring Boot · 字节码</span><span class="go">GitHub ↗</span></div>
+    </a>
+  </div>
+
+  <details class="more reveal">
+    <summary>更多项目 <span class="cnt">3</span></summary>
+    <div class="more-grid">
+      <a class="card glow" href="https://github.com/BIGLV666/Paper-Wise" target="_blank" rel="noopener">
+        <div class="card-top"><h3>PaperWise</h3><span class="badge">全栈项目</span></div>
+        <p>智能学习卡片平台：闪卡管理、收藏夹分享、错题本、SM-2 间隔重复复习、AI 对话助手与自动出题、PDF 导入出题。</p>
+        <div class="card-foot"><span>Spring Boot · MySQL · AI</span><span class="go">GitHub ↗</span></div>
+      </a>
+      <a class="card glow" href="https://github.com/BIGLV666/GitVisualization" target="_blank" rel="noopener">
+        <div class="card-top"><h3>GitScope</h3><span class="badge">可视化</span></div>
+        <p>Git 提交拓扑可视化工具：解析仓库提交历史，前端画布交互式展示分支与提交拓扑。</p>
+        <div class="card-foot"><span>Spring Boot · 前端画布</span><span class="go">GitHub ↗</span></div>
+      </a>
+      <a class="card glow" href="https://github.com/BIGLV666/watch-timetable-h5" target="_blank" rel="noopener">
+        <div class="card-top"><h3>watch-timetable-h5</h3><span class="badge">小工具</span></div>
+        <p>课表展示 H5 页面，轻量前端小应用。</p>
+        <div class="card-foot"><span>HTML5</span><span class="go">GitHub ↗</span></div>
+      </a>
+    </div>
+  </details>
+</section>
+
+<!-- ============ BLOG ============ -->
+<section class="wrap" id="blog">
+  <div class="sec-head reveal">
+    <div class="kicker">BLOG</div>
+    <h2>✍️ 博客</h2>
+    <p class="secsub">组件设计思路与技术方案</p>
+  </div>
+  <div class="cards three">
+    <a class="card glow reveal" href="/articles/cache-kit-design.html">
+      <div class="card-top"><h3>三级缓存组件设计</h3><span class="badge">设计</span></div>
+      <p>实体元数据驱动的 Caffeine → Redis → DB：零注解接入、binlog 直连失效、single-flight 防击穿。</p>
+      <div class="card-foot"><span>cache-kit</span><span class="go">阅读 →</span></div>
+    </a>
+    <a class="card glow reveal" href="/articles/auth-kit-design.html">
+      <div class="card-top"><h3>auth-kit 架构设计</h3><span class="badge">架构</span></div>
+      <p>不透明 Token + 有状态会话：踢人下线、同端互斥、滑动续期、登录防爆破。</p>
+      <div class="card-foot"><span>auth-kit</span><span class="go">阅读 →</span></div>
+    </a>
+    <a class="card glow reveal" href="/articles/outboxpro-intro.html">
+      <div class="card-top"><h3>OutboxPro 事务消息</h3><span class="badge">原理</span></div>
+      <p>Relay 投递、发布确认、死信队列——本地消息表方案完整实现。</p>
+      <div class="card-foot"><span>OutboxPro</span><span class="go">阅读 →</span></div>
+    </a>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/BIGLV666" target="_blank" rel="noopener">GitHub @BIGLV666</a>
+      <a href="mailto:379299583@qq.com">379299583@qq.com</a>
+      <a href="#top">回到顶部 ↑</a>
+    </div>
+    <div>© 2026 吕浩宇 (Haoyu Lv) · 河北师范大学 2029 届 · Java 后端与分布式基础组件</div>
+  </div>
+</footer>
+
+<!-- ============ COMMAND PALETTE ============ -->
+<div id="pal" hidden>
+  <div id="palMask"></div>
+  <div id="palBox">
+    <input id="palInput" type="text" placeholder="搜索组件 / 项目 / 文章…  (Esc 关闭)" autocomplete="off">
+    <ul id="palList"></ul>
+  </div>
+</div>
+
+<script src="/main.js"></script>
+</body>
+</html>

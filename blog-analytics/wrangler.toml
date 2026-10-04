@@ -1,0 +1,10 @@
+name = "biglv666-blog-analytics"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[triggers]
+crons = ["0 1 * * 1"]  # 周一 01:00 UTC = 北京时间每周一 09:00
+
+[[kv_namespaces]]
+binding = "STATS"
+id = "eddc65ffd6ed4f929ab18e2002235bf3"
